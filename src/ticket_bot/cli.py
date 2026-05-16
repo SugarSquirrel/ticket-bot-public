@@ -566,12 +566,17 @@ def countdown(ctx, event, parallel):
 
     async def _countdown():
         from ticket_bot.platforms.tixcraft import TixcraftBot
+        from ticket_bot.platforms.tixcraft_api import TixcraftApiBot
         from ticket_bot.utils.timer import countdown_activate
         import time as _time
+
+        use_api_first_round = cfg.browser.api_mode == "full"
 
         for ev in targets:
             sale_time = datetime.fromisoformat(ev.sale_time)
             click.echo(f"等待開賣: {ev.name} @ {sale_time.isoformat()}")
+            if use_api_first_round:
+                click.echo("首輪將使用 Full API 模式（瀏覽器只負責登入與抽 cookie）")
 
             # 開賣前 10 分鐘才啟動瀏覽器，避免 session 過期
             warmup_at = sale_time.timestamp() - 600  # 10 分鐘前
@@ -593,16 +598,34 @@ def countdown(ctx, event, parallel):
 
             click.echo("啟動瀏覽器預熱...")
 
-            # 預熱所有 sessions
+            # 預熱所有 sessions（api_mode=full 用 TixcraftApiBot 並預先抽 cookie）
             bots = []
             for sess in sessions:
-                bot = TixcraftBot(cfg, ev, session=sess)
+                if use_api_first_round:
+                    bot = TixcraftApiBot(cfg, ev, session=sess)
+                else:
+                    bot = TixcraftBot(cfg, ev, session=sess)
                 await bot.start_browser()
                 await bot.pre_warm()
+                if use_api_first_round:
+                    # 在開賣前把登入確認 + cookie 抽取做完，T=0 直接 _api_loop()
+                    await bot.prepare_api_session()
+                    click.echo(f"  [{sess.name}] 瀏覽器預熱 + API session 就緒")
+                else:
+                    click.echo(f"  [{sess.name}] 瀏覽器已預熱")
                 bots.append((bot, sess))
-                click.echo(f"  [{sess.name}] 瀏覽器已預熱")
 
             click.echo("進入倒數...")
+
+            async def _fire(bot) -> bool:
+                """T=0 觸發：API bot 直接 _api_loop()，browser bot 跑 run()。"""
+                if use_api_first_round:
+                    try:
+                        return await bot._api_loop()
+                    except Exception:
+                        logger.exception("API 搶票流程發生錯誤")
+                        return False
+                return await bot.run()
 
             async def _go():
                 # --- 第一輪：高速搶票 ---
@@ -613,7 +636,7 @@ def countdown(ctx, event, parallel):
                     for bot, sess in bots:
                         async def _bot_run(b=bot, s=sess):
                             try:
-                                success = await b.run()
+                                success = await _fire(b)
                                 if success:
                                     await _notify_all(cfg, ev.name, ev.url, f"搶票成功 (session: {s.name})")
                                 return success
@@ -632,7 +655,7 @@ def countdown(ctx, event, parallel):
                             await asyncio.gather(*pending, return_exceptions=True)
                 else:
                     bot, sess = bots[0]
-                    first_success = await bot.run()
+                    first_success = await _fire(bot)
                     if first_success:
                         await _notify_all(cfg, ev.name, ev.url, "搶票成功")
 

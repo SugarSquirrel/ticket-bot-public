@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+import re
 import time
 from typing import Callable, Awaitable
 from urllib.parse import urlsplit
@@ -803,6 +804,30 @@ class TixcraftApiBot(TixcraftBot):
 
     # ── Full API 模式 run() ───────────────────────────────────
 
+    def _build_area_blacklist_re(self) -> re.Pattern | None:
+        """從 event.area_blacklist_keywords 編譯黑名單 regex；空 list 回傳 None 表示不過濾。"""
+        blacklist = self.event.area_blacklist_keywords or []
+        if not blacklist:
+            return None
+        pattern = "|".join(re.escape(k) for k in blacklist if k)
+        return re.compile(pattern, re.IGNORECASE) if pattern else None
+
+    async def prepare_api_session(self) -> None:
+        """確認登入＋抽出瀏覽器 cookie 建立 httpx session。
+        前提：caller 已經跑過 start_browser + pre_warm（或 _open_page）。
+        countdown 模式會在售票前 10 分鐘呼叫這個方法，把所有準備工作做完，
+        T=0 直接 _api_loop() 開搶。
+        """
+        url = await self._current_url()
+        if detect_login_required("", url):
+            if self.config.browser.headless:
+                self._raise_login_expired()
+            logger.warning("需要登入，請在瀏覽器中手動登入...")
+            await self._wait_for_login()
+
+        await self._wait_for_browser_session_ready()
+        await self._init_http()
+
     async def run(self) -> bool:
         """全流程：瀏覽器登入 → API 搶票"""
         if self.config.browser.api_mode != "full":
@@ -818,18 +843,7 @@ class TixcraftApiBot(TixcraftBot):
         else:
             await self._open_page(self.event.url)
 
-        # 確認已登入
-        url = await self._current_url()
-        if detect_login_required("", url):
-            if self.config.browser.headless:
-                # headless 模式無法手動登入，直接拋出
-                self._raise_login_expired()
-            logger.warning("需要登入，請在瀏覽器中手動登入...")
-            await self._wait_for_login()
-
-        await self._wait_for_browser_session_ready()
-        # 從瀏覽器提取 cookie
-        await self._init_http()
+        await self.prepare_api_session()
 
         # API 搶票迴圈
         try:
@@ -1023,9 +1037,11 @@ class TixcraftApiBot(TixcraftBot):
         html = resp.text
 
         area_info = parse_area_list(html)
-        import re as _re
-        _skip_re = _re.compile(r'身心障礙|身障|輪椅|wheelchair|殘障|站區|搖滾站', _re.IGNORECASE)
-        available = [a for a in area_info["available"] if not _skip_re.search(a["text"])]
+        _skip_re = self._build_area_blacklist_re()
+        if _skip_re:
+            available = [a for a in area_info["available"] if not _skip_re.search(a["text"])]
+        else:
+            available = list(area_info["available"])
 
         if not available:
             self.last_error = f"步驟2 區域：所有區域已售完 ({area_info['total']} 區)"
@@ -1614,11 +1630,14 @@ class TixcraftApiBot(TixcraftBot):
                 area_info = parse_area_list(html)
                 all_available = area_info["available"]
 
-                # 過濾身障票
-                import re as _re
-                _skip_re = _re.compile(r'身心障礙|身障|輪椅|wheelchair|殘障|站區|搖滾站', _re.IGNORECASE)
-                available = [a for a in all_available if not _skip_re.search(a["text"])]
-                disabled_only = [a for a in all_available if _skip_re.search(a["text"])]
+                # 過濾黑名單區（預設身障票/站區；可在 config.yaml events[].area_blacklist_keywords 自訂）
+                _skip_re = self._build_area_blacklist_re()
+                if _skip_re:
+                    available = [a for a in all_available if not _skip_re.search(a["text"])]
+                    disabled_only = [a for a in all_available if _skip_re.search(a["text"])]
+                else:
+                    available = list(all_available)
+                    disabled_only = []
 
                 if not available and disabled_only:
                     if visit_num % 10 == 1:

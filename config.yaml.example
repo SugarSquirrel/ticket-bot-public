@@ -7,6 +7,16 @@ events:
     area_keyword: ""               # 區域篩選（留空 = 第一個可用）
     sale_time: ""                  # 倒數模式用，ISO 8601 格式，如 "2026-04-15T12:00:00+08:00"
     presale_code: ""
+    # 區域黑名單：含這些字串的區域會被自動跳過
+    # 預設身障/站區/輪椅相關。設為 [] 完全停用。
+    # area_blacklist_keywords:
+    #   - "身心障礙"
+    #   - "身障"
+    #   - "輪椅"
+    #   - "wheelchair"
+    #   - "殘障"
+    #   - "站區"
+    #   - "搖滾站"
 
 browser:
   engine: nodriver                 # nodriver（推薦）或 playwright

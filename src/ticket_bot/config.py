@@ -12,6 +12,11 @@ from dotenv import load_dotenv
 from ticket_bot.gemma_client import GemmaConfig
 
 
+DEFAULT_AREA_BLACKLIST = [
+    "身心障礙", "身障", "輪椅", "wheelchair", "殘障", "站區", "搖滾站",
+]
+
+
 @dataclass
 class EventConfig:
     name: str
@@ -22,6 +27,10 @@ class EventConfig:
     area_keyword: str = ""
     sale_time: str = ""
     presale_code: str = ""
+    # 區域黑名單：含這些字串的區域會被跳過。設為 [] 完全停用過濾
+    area_blacklist_keywords: list[str] = field(
+        default_factory=lambda: list(DEFAULT_AREA_BLACKLIST)
+    )
 
 
 @dataclass

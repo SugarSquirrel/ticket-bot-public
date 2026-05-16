@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from html.parser import HTMLParser
 
@@ -13,8 +14,47 @@ def split_match_keywords(raw: str) -> list[str]:
     return [part.strip() for part in re.split(r"[|,\n;，；]+", raw) if part.strip()]
 
 
+def _parse_quoted_keyword_groups(raw: str) -> list[str] | None:
+    """嘗試用 ticket_hunter 式 JSON 引號格式解析，例如:
+        '"NT$7,880"'                → ['NT$7,880']
+        '"VIP","NT$7,880"'          → ['VIP', 'NT$7,880']
+        '"VIP 1F"'                  → ['VIP 1F']  (空白 = AND)
+    解析失敗回傳 None（讓呼叫端 fallback）。
+    """
+    s = raw.strip()
+    if not (s.startswith('"') and s.endswith('"')):
+        return None
+    try:
+        groups = json.loads("[" + s + "]")
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(groups, list) or not all(isinstance(g, str) for g in groups):
+        return None
+    return groups
+
+
 def matches_any_keyword(text: str, raw_keywords: str) -> bool:
-    """檢查文字是否命中任一關鍵字。"""
+    """檢查文字是否命中任一關鍵字。
+
+    支援兩種語法：
+    1. JSON 引號格式（推薦，逗號可安全使用於 keyword 內）：
+       `"NT$7,880","NT$8,800"` — OR 跨字串、AND 同字串內以空白分隔
+    2. 傳統分隔符格式（向後相容）：
+       `VIP|搖滾|A區` — `|` / `,` / `;` / 換行皆為 OR 分隔符
+    """
+    if not raw_keywords:
+        return False
+
+    groups = _parse_quoted_keyword_groups(raw_keywords)
+    if groups is not None:
+        for group in groups:
+            if not group:
+                return True  # 空字串 = match all（與 ticket_hunter 一致）
+            tokens = group.split()
+            if tokens and all(t in text for t in tokens):
+                return True
+        return False
+
     keywords = split_match_keywords(raw_keywords)
     if not keywords:
         return False

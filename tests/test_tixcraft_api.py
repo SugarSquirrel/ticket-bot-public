@@ -523,6 +523,34 @@ def test_matches_any_keyword_matches_any_date():
     assert matches_any_keyword("2026/09/13 (Sun.) 18:00 IVE", "2026/09/11|2026/09/12") is False
 
 
+def test_matches_any_keyword_quoted_preserves_comma():
+    # Quoted JSON format protects commas inside prices (ticket_hunter style)
+    assert matches_any_keyword("搖滾區 NT$7,880 售完", '"NT$7,880"') is True
+    assert matches_any_keyword("搖滾區 NT$8,800 售完", '"NT$7,880"') is False
+
+
+def test_matches_any_keyword_quoted_or_across_groups():
+    text = "VIP A1 NT$8,800"
+    assert matches_any_keyword(text, '"NT$7,880","NT$8,800"') is True
+    assert matches_any_keyword("NT$5,000", '"NT$7,880","NT$8,800"') is False
+
+
+def test_matches_any_keyword_quoted_and_within_group():
+    # Space inside a quoted string = AND (all tokens must appear)
+    assert matches_any_keyword("VIP 1F 搖滾區", '"VIP 1F"') is True
+    assert matches_any_keyword("VIP 2F 搖滾區", '"VIP 1F"') is False
+    assert matches_any_keyword("1F 看台區", '"VIP 1F"') is False
+
+
+def test_matches_any_keyword_quoted_empty_matches_all():
+    assert matches_any_keyword("anything", '""') is True
+
+
+def test_matches_any_keyword_falls_back_to_legacy_when_unquoted():
+    assert matches_any_keyword("VIP 搖滾區", "VIP|搖滾") is True
+    assert matches_any_keyword("看台區", "VIP|搖滾") is False
+
+
 @pytest.mark.asyncio
 async def test_select_game_api_supports_multi_date_keywords():
     html = """
