@@ -111,6 +111,7 @@ class SessionConfig:
     user_data_dir: str = "./chrome_profile"
     proxy_server: str = ""
     cookie_file: str = ""
+    tixcraft_sid: str = ""  # TIXUISID cookie 值；非空時跳過手動登入直接注入
 
 
 @dataclass

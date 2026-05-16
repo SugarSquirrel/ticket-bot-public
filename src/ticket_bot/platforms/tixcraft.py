@@ -62,6 +62,30 @@ COMING_SOON_JS = """
 """
 
 
+async def inject_tixcraft_sid(page: PageWrapper, sid: str) -> bool:
+    """注入 TIXUISID cookie，跳過手動登入。
+    需先 page.goto 至 tixcraft.com，回傳是否成功。
+    """
+    if not sid or len(sid) < 2:
+        return False
+    try:
+        await page.set_cookies([
+            {
+                "name": "TIXUISID",
+                "value": sid,
+                "domain": ".tixcraft.com",
+                "path": "/",
+                "secure": True,
+                "httpOnly": True,
+            }
+        ])
+        logger.info("已注入 TIXUISID cookie (length=%d)", len(sid))
+        return True
+    except Exception as e:
+        logger.warning("注入 TIXUISID 失敗: %s", e)
+        return False
+
+
 class TixcraftBot:
     """tixcraft 全自動搶票機器人"""
 
@@ -123,7 +147,14 @@ class TixcraftBot:
             None, lambda: socket.getaddrinfo("tixcraft.com", 443)
         )
 
-        await self._open_page(url)
+        sid = (self.session.tixcraft_sid if self.session else "") or ""
+        if sid:
+            # 先導到首頁建立 CDP target → 注入 cookie → 再導到活動頁
+            await self._open_page("https://tixcraft.com/")
+            await inject_tixcraft_sid(self.page, sid)
+            await self.page.goto(url)
+        else:
+            await self._open_page(url)
 
         # 等 DNS 完成
         try:

@@ -301,31 +301,56 @@ def list_games(ctx):
 @click.option("--platform", type=click.Choice(["auto", "tixcraft", "kktix"]), default="auto", help="登入平台")
 @click.pass_context
 def login(ctx, platform):
-    """開啟瀏覽器讓你手動登入票務網站（登入後按 Enter 關閉）"""
+    """開啟瀏覽器登入票務網站（tixcraft 設了 tixcraft_sid 會自動注入 cookie）"""
     cfg = load_config(ctx.obj["config_path"])
     target_platform = platform
     if target_platform == "auto":
         target_platform = cfg.events[0].platform if cfg.events else "tixcraft"
     login_url = "https://kktix.com/users/sign_in" if target_platform == "kktix" else "https://tixcraft.com/login"
 
+    sid = ""
+    user_data_dir = cfg.browser.user_data_dir
+    if target_platform == "tixcraft" and cfg.sessions:
+        sid = (cfg.sessions[0].tixcraft_sid or "").strip()
+        user_data_dir = cfg.sessions[0].user_data_dir or user_data_dir
+
     async def _login():
         from ticket_bot.browser import create_engine
+        from ticket_bot.platforms.tixcraft import inject_tixcraft_sid
 
         engine = create_engine(cfg.browser.engine)
         await engine.launch(
             headless=False,
-            user_data_dir=cfg.browser.user_data_dir,
+            user_data_dir=user_data_dir,
             executable_path=cfg.browser.executable_path,
             lang=cfg.browser.lang,
         )
-        page = await engine.new_page(login_url)
-        click.echo(f"瀏覽器已開啟 {target_platform} 登入頁面。")
-        click.echo("請在瀏覽器中完成登入，登入成功後回到這裡按 Enter 關閉瀏覽器...")
 
-        await asyncio.get_event_loop().run_in_executor(None, input)
+        if sid:
+            click.echo(f"偵測到 tixcraft_sid（length={len(sid)}），用 cookie 直接登入...")
+            page = await engine.new_page("https://tixcraft.com/")
+            ok = await inject_tixcraft_sid(page, sid)
+            if not ok:
+                click.echo("注入 cookie 失敗，請手動登入。")
+                await page.goto(login_url)
+                click.echo("請在瀏覽器中完成登入，登入成功後回到這裡按 Enter 關閉瀏覽器...")
+                await asyncio.get_event_loop().run_in_executor(None, input)
+            else:
+                # reload 讓 cookie 生效，驗證登入狀態
+                await page.goto("https://tixcraft.com/")
+                await page.sleep(1.5)
+                url = await page.current_url()
+                click.echo(f"目前頁面: {url}")
+                click.echo("Cookie 已注入，登入狀態已寫入 chrome_profile。按 Enter 關閉瀏覽器...")
+                await asyncio.get_event_loop().run_in_executor(None, input)
+        else:
+            page = await engine.new_page(login_url)
+            click.echo(f"瀏覽器已開啟 {target_platform} 登入頁面。")
+            click.echo("請在瀏覽器中完成登入，登入成功後回到這裡按 Enter 關閉瀏覽器...")
+            await asyncio.get_event_loop().run_in_executor(None, input)
+            url = await page.current_url()
+            click.echo(f"目前頁面: {url}")
 
-        url = await page.current_url()
-        click.echo(f"目前頁面: {url}")
         await engine.close()
         click.echo("瀏覽器已關閉，登入狀態已儲存到 chrome_profile。")
 
