@@ -168,9 +168,41 @@ class CaptchaSolver:
         return text, confidence
 
     def _run_ddddocr(self, processed_bytes: bytes) -> tuple[str, float]:
-        """用 ddddocr 推論"""
+        """用 ddddocr 推論，相容 1.5 / 1.6+ 兩種 API 格式。"""
         result = self.ocr.classification(processed_bytes, probability=True)
-        return result["text"], result["confidence"]
+
+        # 舊 API（1.5 以前）：可能直接回 str
+        if isinstance(result, str):
+            return result, 0.9  # 沒有信心度資訊，給高信心
+
+        if not isinstance(result, dict):
+            return "", 0.0
+
+        # 1.5 風格：{"text": "abcd", "confidence": 0.9}
+        if "text" in result:
+            return result["text"], float(result.get("confidence", 0.9))
+
+        # 1.6+ 風格：{"charsets": [...], "probability": [[...], ...]}
+        charsets = result.get("charsets") or []
+        probability = result.get("probability") or []
+        if not charsets or not probability:
+            return "", 0.0
+
+        text_chars = []
+        confs = []
+        for pos_probs in probability:
+            try:
+                seq = list(pos_probs)
+                best_idx = seq.index(max(seq))
+                if 0 <= best_idx < len(charsets):
+                    text_chars.append(charsets[best_idx])
+                    confs.append(float(seq[best_idx]))
+            except (ValueError, IndexError, TypeError):
+                continue
+
+        text = "".join(text_chars)
+        confidence = (sum(confs) / len(confs)) if confs else 0.0
+        return text, confidence
 
     def solve(self, image_bytes: bytes) -> tuple[str, float]:
         """辨識驗證碼圖片 — 雙模型交叉驗證提高準確率"""
