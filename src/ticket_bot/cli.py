@@ -666,12 +666,20 @@ def countdown(ctx, event, parallel):
                     click.echo("第一輪未成功，自動切換 watch 釋票模式...")
                     await _notify_all(cfg, ev.name, ev.url, "首輪搶票未成功，已切換釋票監測模式")
 
+                # 釋放 countdown 階段所有 bot 的瀏覽器，避免 watch 階段 user-data-dir 被鎖
+                for cd_bot, _cd_sess in bots:
+                    try:
+                        await cd_bot.close()
+                    except Exception:
+                        logger.exception("countdown bot close 發生錯誤")
+
                 # 用第一個 session 切入 watch 模式
                 round_count = 1 if first_success else 0
                 while True:
                     round_count += 1
                     use_api = cfg.browser.api_mode != "off"
                     watch_bot = _create_platform_bot(cfg, ev, bots[0][1], use_api=use_api)
+                    success = False  # 確保 finally 可以安全引用
                     try:
                         success = await watch_bot.watch(interval=5.0)
                         if success:
@@ -687,9 +695,16 @@ def countdown(ctx, event, parallel):
                     except KeyboardInterrupt:
                         click.echo("\n已停止")
                         break
+                    except Exception:
+                        logger.exception("watch 階段發生例外，2 秒後重試")
+                        await asyncio.sleep(2.0)
+                        continue
                     finally:
                         if not success:
-                            await watch_bot.close()
+                            try:
+                                await watch_bot.close()
+                            except Exception:
+                                logger.exception("watch_bot close 發生錯誤")
 
             await countdown_activate(sale_time, _go)
 
