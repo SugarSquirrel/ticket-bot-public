@@ -155,6 +155,18 @@ class NodriverPage(PageWrapper):
         return [{"name": c.name, "value": c.value, "domain": c.domain, "path": c.path,
                  "httpOnly": c.http_only, "secure": c.secure} for c in cookies]
 
+    async def delete_cookies(self, name: str, domain: str = "") -> None:
+        """透過 CDP Network.deleteCookies 刪除指定 cookie"""
+        import nodriver.cdp.network as cdp_net
+        try:
+            params = {"name": name}
+            if domain:
+                params["domain"] = domain
+            await self._page.send(cdp_net.delete_cookies(**params))
+            logger.debug("已刪除 cookie: name=%s domain=%s", name, domain or "*")
+        except Exception as e:
+            logger.warning("刪除 cookie 失敗 [%s]: %s", name, e)
+
     async def set_cookies(self, cookies: list[dict]) -> None:
         """透過 CDP Network.setCookie 設定 cookies"""
         import nodriver.cdp.network as cdp_net

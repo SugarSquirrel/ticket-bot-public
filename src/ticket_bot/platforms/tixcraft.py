@@ -64,11 +64,18 @@ COMING_SOON_JS = """
 
 async def inject_tixcraft_sid(page: PageWrapper, sid: str) -> bool:
     """注入 TIXUISID cookie，跳過手動登入。
+
+    先刪除舊的 TIXUISID + legacy SID cookie，再 set 新值，避免 profile
+    殘留蓋過新注入（與 ticket_hunter 行為一致）。
     需先 page.goto 至 tixcraft.com，回傳是否成功。
     """
     if not sid or len(sid) < 2:
         return False
     try:
+        # 1. 先清掉 profile 殘留 / server 之前 set 的舊 cookie
+        for cookie_name in ("TIXUISID", "SID"):
+            await page.delete_cookies(cookie_name, ".tixcraft.com")
+        # 2. set 新的 SID
         await page.set_cookies([
             {
                 "name": "TIXUISID",
@@ -79,7 +86,7 @@ async def inject_tixcraft_sid(page: PageWrapper, sid: str) -> bool:
                 "httpOnly": True,
             }
         ])
-        logger.info("已注入 TIXUISID cookie (length=%d)", len(sid))
+        logger.info("已注入 TIXUISID cookie (length=%d，舊值已清除)", len(sid))
         return True
     except Exception as e:
         logger.warning("注入 TIXUISID 失敗: %s", e)

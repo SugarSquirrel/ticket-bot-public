@@ -114,6 +114,17 @@ class PlaywrightPage(PageWrapper):
         if formatted:
             await self._page.context.add_cookies(formatted)
 
+    async def delete_cookies(self, name: str, domain: str = "") -> None:
+        """透過 Playwright context.clear_cookies 刪除指定 cookie"""
+        try:
+            kwargs = {"name": name}
+            if domain:
+                kwargs["domain"] = domain
+            await self._page.context.clear_cookies(**kwargs)
+            logger.debug("已刪除 cookie: name=%s domain=%s", name, domain or "*")
+        except Exception as e:
+            logger.warning("刪除 cookie 失敗 [%s]: %s", name, e)
+
     async def block_urls(self, patterns: list[str]) -> None:
         """透過 Playwright route 封鎖追蹤/廣告資源"""
         try:

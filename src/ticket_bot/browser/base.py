@@ -79,6 +79,9 @@ class PageWrapper(abc.ABC):
     async def set_cookies(self, cookies: list[dict]) -> None:
         """設定 cookies（用於 API→瀏覽器同步）。每個 dict 需有 name, value, url 或 domain"""
 
+    async def delete_cookies(self, name: str, domain: str = "") -> None:
+        """刪除指定 cookie（避免舊值蓋過新注入值）。預設不做任何事，由具體 engine 實作"""
+
     async def screenshot(self) -> bytes:
         """截圖，回傳 PNG bytes（預設空）"""
         return b""
