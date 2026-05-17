@@ -19,7 +19,7 @@ events:
     #   - "搖滾站"
 
 browser:
-  engine: nodriver                 # nodriver（推薦）或 playwright
+  engine: playwright               # playwright（Chrome 148+ Win 上較穩）或 nodriver
   headless: false
   user_data_dir: "./chrome_profile"
   pre_warm: true
