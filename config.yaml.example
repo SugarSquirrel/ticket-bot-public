@@ -34,8 +34,9 @@ captcha:
   confidence_threshold: 0.6
   max_attempts: 5
   preprocess: false                # tixcraft captcha 不需前處理
-  custom_model_path: "model/captcha_model.onnx" # 自訓練 ONNX 模型路徑（留空用預設模型）
-  custom_charset_path: "model/charset.json"      # 自訓練模型字元集路徑（推薦 json；txt 也支援）
+  # tixcraft 專用 OCR 模型（5.5MB，移植自 ticket_hunter tixcraft_tm）
+  custom_model_path: "model/custom.onnx"
+  custom_charset_path: "model/charsets.json"
   collect_dir: ""                  # 驗證碼收集目錄（留空不收集，填路徑啟用，如 "./captcha_samples"）
 
 notifications:

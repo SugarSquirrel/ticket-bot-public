@@ -65,16 +65,18 @@ COMING_SOON_JS = """
 async def inject_tixcraft_sid(page: PageWrapper, sid: str) -> bool:
     """注入 TIXUISID cookie，跳過手動登入。
 
-    先刪除舊的 TIXUISID + legacy SID cookie，再 set 新值，避免 profile
-    殘留蓋過新注入（與 ticket_hunter 行為一致）。
-    需先 page.goto 至 tixcraft.com，回傳是否成功。
+    Browser 把 `.tixcraft.com`、`tixcraft.com`、`www.tixcraft.com` 視為三條獨立
+    cookie。tixcraft server 可能在任一 domain set 訪客 SID，若只刪一條，剩下的
+    會跟我們注入的併存（瀏覽器同時送兩條 TIXUISID → server 認證失敗）。
+    這裡把所有 variant 都清掉再 set，與 ticket_hunter 行為一致。
     """
     if not sid or len(sid) < 2:
         return False
     try:
-        # 1. 先清掉 profile 殘留 / server 之前 set 的舊 cookie
+        # 1. 清掉所有 domain variant 的舊 cookie，避免多條同名衝突
         for cookie_name in ("TIXUISID", "SID"):
-            await page.delete_cookies(cookie_name, ".tixcraft.com")
+            for d in (".tixcraft.com", "tixcraft.com", "www.tixcraft.com"):
+                await page.delete_cookies(cookie_name, d)
         # 2. set 新的 SID
         await page.set_cookies([
             {
@@ -86,7 +88,7 @@ async def inject_tixcraft_sid(page: PageWrapper, sid: str) -> bool:
                 "httpOnly": True,
             }
         ])
-        logger.info("已注入 TIXUISID cookie (length=%d，舊值已清除)", len(sid))
+        logger.info("已注入 TIXUISID cookie (length=%d，所有 domain variant 舊值已清除)", len(sid))
         return True
     except Exception as e:
         logger.warning("注入 TIXUISID 失敗: %s", e)
